@@ -4,9 +4,10 @@ import random
 import json
 import os
 
-# --- Init ---
 pygame.init()
 WIDTH, HEIGHT = 600, 700
+TOP_MARGIN = 100  # Space at top for scores
+GRID_SIZE = 600
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("🕹️ Neon Arcade Tic-Tac-Toe")
 clock = pygame.time.Clock()
@@ -16,27 +17,21 @@ BLACK = (0, 0, 0)
 NEON_ORANGE = (255, 165, 0)
 GLOW = (255, 140, 0)
 WHITE = (255, 255, 255)
-FPS = 60
 
 # Fonts
-FONT = pygame.font.SysFont("Courier", 60, bold=True)
-SMALL_FONT = pygame.font.SysFont("Courier", 30, bold=True)
+# Fonts
+FONT = pygame.font.SysFont("Courier", 60, bold=True)        # For X and O
+SMALL_FONT = pygame.font.SysFont("Courier", 20, bold=True)  # For status and scores
 
-# Sound and Music
+
+# Music
 try:
     pygame.mixer.music.load("arcade_theme.mp3")
     pygame.mixer.music.play(-1)
 except:
     pass
 
-try:
-    click_sound = pygame.mixer.Sound("click.wav")
-    win_sound = pygame.mixer.Sound("win.wav")
-except:
-    click_sound = None
-    win_sound = None
-
-# Scores
+# Score
 score_file = "scores.json"
 scores = {"X": 0, "O": 0, "Draws": 0}
 if os.path.exists(score_file):
@@ -54,139 +49,165 @@ mode = "PVP"
 game_over = False
 winner = None
 particles = []
-
-# Main menu
 menu_active = True
 
 def draw_menu():
     SCREEN.fill(BLACK)
-    title = FONT.render("Neon Tic-Tac-Toe", True, NEON_ORANGE)
-    SCREEN.blit(title, (WIDTH//2 - title.get_width()//2, 150))
-
+    title = FONT.render("NEON TIC-TAC-TOE", True, NEON_ORANGE)
     pvp = SMALL_FONT.render("1. Player vs Player", True, WHITE)
     pvc = SMALL_FONT.render("2. Player vs CPU", True, WHITE)
     quit_game = SMALL_FONT.render("Q. Quit", True, WHITE)
-
-    SCREEN.blit(pvp, (WIDTH//2 - pvp.get_width()//2, 300))
-    SCREEN.blit(pvc, (WIDTH//2 - pvc.get_width()//2, 350))
-    SCREEN.blit(quit_game, (WIDTH//2 - quit_game.get_width()//2, 400))
-
+    SCREEN.blit(title, title.get_rect(center=(WIDTH // 2, 150)))
+    SCREEN.blit(pvp, pvp.get_rect(center=(WIDTH // 2, 250)))
+    SCREEN.blit(pvc, pvc.get_rect(center=(WIDTH // 2, 300)))
+    SCREEN.blit(quit_game, quit_game.get_rect(center=(WIDTH // 2, 350)))
     pygame.display.flip()
 
 def draw_particles():
-    for p in particles:
-        pygame.draw.circle(SCREEN, NEON_ORANGE, (int(p["x"]), int(p["y"])), p["r"])
-        p["x"] += p["vx"]
-        p["y"] += p["vy"]
-        p["r"] = max(0, p["r"] - 0.1)
-    particles[:] = [p for p in particles if p["r"] > 0]
+    for p in particles[:]:
+        p["x"] += p["dx"]
+        p["y"] += p["dy"]
+        p["life"] -= 1
+        p["radius"] *= 0.97
+        if p["life"] <= 0:
+            particles.remove(p)
+        else:
+            pygame.draw.circle(SCREEN, NEON_ORANGE, (int(p["x"]), int(p["y"])), int(p["radius"]))
 
 def spawn_particles(x, y):
     for _ in range(20):
         particles.append({
-            "x": x, "y": y,
-            "vx": random.uniform(-2, 2),
-            "vy": random.uniform(-2, 2),
-            "r": random.randint(2, 5)
+            "x": x,
+            "y": y + TOP_MARGIN,
+            "radius": random.randint(2, 5),
+            "dx": random.uniform(-2, 2),
+            "dy": random.uniform(-2, 2),
+            "life": random.randint(30, 60)
         })
 
 def draw_board():
     SCREEN.fill(BLACK)
 
-    for i in range(1, 3):
-        pygame.draw.line(SCREEN, GLOW, (0, i * 200 + 100), (600, i * 200 + 100), 5)
-        pygame.draw.line(SCREEN, GLOW, (i * 200, 100), (i * 200, 700), 5)
+    # Draw score/status at the top
+    status_text = SMALL_FONT.render(
+        f"Turn: {current_player}   |   Wins - X: {scores['X']} O: {scores['O']}   |   Draws: {scores['Draws']}",
+        True, NEON_ORANGE
+    )
+    SCREEN.blit(status_text, (WIDTH // 2 - status_text.get_width() // 2, 10))
 
-    for i, val in enumerate(board):
-        x = (i % 3) * 200 + 100
-        y = (i // 3) * 200 + 200
-        if val != " ":
-            text = FONT.render(val, True, NEON_ORANGE)
-            SCREEN.blit(text, (x - text.get_width()//2, y - text.get_height()//2))
-
-    score_text = SMALL_FONT.render(f"X:{scores['X']}  O:{scores['O']}  Draws:{scores['Draws']}", True, WHITE)
-    SCREEN.blit(score_text, (WIDTH//2 - score_text.get_width()//2, 580))
-
+    # 🔻 New section: Display winner message if game is over
     if game_over:
-        msg = f"{winner} wins!" if winner else "Draw!"
-    else:
-        msg = f"{current_player}'s Turn"
-    status = SMALL_FONT.render(msg, True, WHITE)
-    SCREEN.blit(status, (WIDTH//2 - status.get_width()//2, 650))
+        if winner == "Draw":
+            result_text = SMALL_FONT.render("It's a Draw!", True, NEON_ORANGE)
+        else:
+            result_text = SMALL_FONT.render(f"{winner} Wins!", True, NEON_ORANGE)
+        SCREEN.blit(result_text, (WIDTH // 2 - result_text.get_width() // 2, 45))
+
+    # Draw the grid
+    for i in range(1, 3):
+        pygame.draw.line(SCREEN, GLOW, (0, i * 200 + TOP_MARGIN), (WIDTH, i * 200 + TOP_MARGIN), 5)
+        pygame.draw.line(SCREEN, GLOW, (i * 200, TOP_MARGIN), (i * 200, TOP_MARGIN + GRID_SIZE), 5)
+
+    # Draw X and O in cells
+    for i, mark in enumerate(board):
+        row = i // 3
+        col = i % 3
+        if mark != " ":
+            text = FONT.render(mark, True, NEON_ORANGE)
+            rect = text.get_rect(center=(col * 200 + 100, row * 200 + 100 + TOP_MARGIN))
+            SCREEN.blit(text, rect)
 
     draw_particles()
 
+
 def check_winner():
-    global winner, game_over
-    combos = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),
-              (1,4,7),(2,5,8),(0,4,8),(2,4,6)]
-    for a,b,c in combos:
-        if board[a] == board[b] == board[c] != " ":
-            winner = board[a]
+    global game_over, winner
+    combos = [(0,1,2), (3,4,5), (6,7,8),
+              (0,3,6), (1,4,7), (2,5,8),
+              (0,4,8), (2,4,6)]
+    for a, b, c in combos:
+        if board[a] == board[b] == board[c] and board[a] != " ":
             game_over = True
+            winner = board[a]
             scores[winner] += 1
+            for i in (a, b, c):
+                col = i % 3
+                row = i // 3
+                spawn_particles(col * 200 + 100, row * 200 + 100)
             save_scores()
-            spawn_particles(300, 400)
-            if win_sound: win_sound.play()
             return
     if " " not in board:
         game_over = True
+        winner = "Draw"
         scores["Draws"] += 1
         save_scores()
 
 def reset_game():
-    global board, current_player, game_over, winner
+    global board, current_player, game_over, winner, particles
     board = [" " for _ in range(9)]
     current_player = "X"
     game_over = False
     winner = None
+    particles = []
 
 def handle_click(pos):
-    global current_player
-    if game_over:
-        return
+    global current_player, game_over
     x, y = pos
-    if y < 100: return
-    row = (y - 100) // 200
+    if y < TOP_MARGIN or game_over:
+        return
+    row = (y - TOP_MARGIN) // 200
     col = x // 200
     idx = row * 3 + col
     if board[idx] == " ":
         board[idx] = current_player
-        if click_sound: click_sound.play()
         check_winner()
         if not game_over:
             current_player = "O" if current_player == "X" else "X"
 
 def cpu_move():
-    empty = [i for i, v in enumerate(board) if v == " "]
-    for move in empty:
-        copy = board[:]
-        copy[move] = "O"
-        if winner_check(copy, "O"):
-            return move
-    for move in empty:
-        copy = board[:]
-        copy[move] = "X"
-        if winner_check(copy, "X"):
-            return move
-    return random.choice(empty)
+    global current_player
+    for i in range(9):
+        if board[i] == " ":
+            temp = board[:]
+            temp[i] = current_player
+            if winner_check(temp, current_player):
+                board[i] = current_player
+                check_winner()
+                current_player = "X"
+                return
+    opponent = "X"
+    for i in range(9):
+        if board[i] == " ":
+            temp = board[:]
+            temp[i] = opponent
+            if winner_check(temp, opponent):
+                board[i] = current_player
+                check_winner()
+                current_player = "X"
+                return
+    while True:
+        move = random.randint(0, 8)
+        if board[move] == " ":
+            board[move] = current_player
+            check_winner()
+            current_player = "X"
+            break
 
 def winner_check(b, p):
-    return any(b[a] == b[b_] == b[c] == p for a,b_,c in [
-        (0,1,2),(3,4,5),(6,7,8),(0,3,6),
-        (1,4,7),(2,5,8),(0,4,8),(2,4,6)
-    ])
+    combos = [(0,1,2), (3,4,5), (6,7,8),
+              (0,3,6), (1,4,7), (2,5,8),
+              (0,4,8), (2,4,6)]
+    return any(b[a] == b[b_] == b[c] == p for a, b_, c in combos)
 
-# --- Game Loop ---
+# Main Loop
 running = True
 while running:
-    clock.tick(FPS)
     if menu_active:
         draw_menu()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN:
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_1:
                     mode = "PVP"
                     menu_active = False
@@ -197,30 +218,26 @@ while running:
                     reset_game()
                 elif event.key == pygame.K_q:
                     running = False
-    else:
-        draw_board()
-        pygame.display.flip()
+        continue
 
-        if mode == "PVC" and current_player == "O" and not game_over:
-            pygame.time.wait(500)
-            move = cpu_move()
-            board[move] = "O"
-            if click_sound: click_sound.play()
-            check_winner()
-            if not game_over:
-                current_player = "X"
+    draw_board()
+    if not game_over and mode == "PVC" and current_player == "O":
+        pygame.time.delay(500)
+        cpu_move()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                handle_click(event.pos)
-            elif event.type == pygame.KEYDOWN and game_over:
-                if event.key == pygame.K_RETURN:
-                    reset_game()
-            elif event.type == pygame.KEYDOWN and not game_over:
-                if event.key == pygame.K_ESCAPE:
-                    menu_active = True
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.MOUSEBUTTONDOWN and not game_over:
+            handle_click(pygame.mouse.get_pos())
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                menu_active = True
+            if event.key == pygame.K_RETURN and game_over:
+                reset_game()
+
+    pygame.display.flip()
+    clock.tick(60)
 
 pygame.quit()
 sys.exit()
